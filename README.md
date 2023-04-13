@@ -61,20 +61,20 @@ The use the CMS, navigate to `/admin` and use the credentials `user`, `password`
 
 ## Commands
 
-**spin-up docker container**
+### spin-up docker container
 docker-compose up --build
 
-**spin-up docker container as detached process**
+### spin-up docker container as detached process
 docker-compose up --build -d
 
-**spin-down docker container**
+### spin-down docker container
 docker-compose down
 
-**ssh in as root**
+### ssh in as root
 docker exec -it mywebserver /bin/bash
 
-**ssh in as www-data**
+### ssh in as www-data
 docker exec -it mywebserver sh -c "cd /var/www && su -s /bin/bash www-data"
 
-**mysql**
+### mysql
 mysql -uroot -proot -h0.0.0.0 -P3350 -DSS_mysite
