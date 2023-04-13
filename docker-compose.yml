@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+
+  webserver:
+    container_name: mywebserver
+    build:
+      context: .
+    volumes:
+      - ../mycms/:/var/www
+    domainname: mycms.test
+    hostname: www
+    networks:
+      mynet:
+        ipv4_address: 10.0.50.50
+    environment:
+      - SS_BASE_URL=http://mycms.test
+
+  mariadb:
+    container_name: mymariadb
+    image: mariadb:10.5.16
+    # If changing database version after a container has already been created
+    # you'll need to `dcd && docker volume rm bugfix5_mariadb-volume`
+    # if all else fails `dqx` and rebuild everything
+    volumes:
+      - mariadb-volume:/var/lib/mysql
+    environment:
+      TZ: "Pacific/Auckland"
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_ROOT_PASSWORD: "root"
+      MYSQL_DATABASE: 'SS_mysite'
+    # use ports instead of IP address for database connection
+    # example: bugfix14 connect on 0.0.0.0:3314
+    ports:
+      - 336:3306
+    networks:
+      mynet:
+
+volumes:
+  mariadb-volume:
+    name: mycms_mariadb-volume
+
+networks:
+  mynet:
+    name: mynetwork
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 10.0.50.0/24

@@ -1,0 +1,147 @@
+#!/bin/bash
+
+enable_xdebug=false
+
+# set -e -- Exit immediately if a command exits with a non-zero status.
+set -e
+
+PHP_ERROR_REPORTING=${PHP_ERROR_REPORTING:-"E_ALL"}
+
+versions="7.1 7.2 7.3 7.4 7.5 8.0 8.1 8.2 8.3 8.4"
+types="apache2 cli"
+# https://xdebug.org/docs/upgrade_guide
+xdebug2_options="xdebug.remote_enable xdebug.remote_autostart xdebug.remote_connect_back xdebug.remote_host ;xdebug.profiler_enable ;xdebug.profiler_output_dir"
+xdebug3_options="xdebug.mode ;xdebug.mode xdebug.trace_format xdebug.trace_options xdebug.trace_output_name xdebug.collect_return xdebug.collect_assignments xdebug.output_dir xdebug.start_with_request xdebug.discover_client_host xdebug.client_host xdebug.client_port"
+
+for version in $versions; do
+
+    # Configure:
+    # - Error reporting
+    # - Max upload filesize
+    for type in $types; do
+        path="/etc/php/$version/$type/php.ini"
+        if [[ -f "/etc/php/$version/$type/php.ini" ]]; then
+            sed -ri 's#^display_errors\s*=\s*Off#display_errors = On#g' "$path"
+            sed -ri "s#^error_reporting\s*=.*##g" "$path"
+            echo "error_reporting = $PHP_ERROR_REPORTING" >> "$path"
+            echo "upload_max_filesize = 50M" >> "$path"
+        fi
+    done
+
+    # Disable/enable loading xdebug extension
+    # We use this method because it gives the biggest performance increase, and because
+    # this will disable both apache2 and cli since their ini's are both symlinked to mods-available i.e.
+    # - /etc/php/7.3/apache2/conf.d/20-xdebug.ini
+    # - /etc/php/7.3/cli/conf.d/20-xdebug.ini
+    # Note: Disabling xdebug improves performance by 50%
+    path="/etc/php/$version/mods-available/xdebug.ini"
+    if [ -f "$path" ]; then
+        value=";zend_extension=xdebug.so"
+        if [ "$enable_xdebug" == true ]; then
+            value="zend_extension=xdebug.so"
+        fi
+        echo "$value" > "$path"
+    fi
+    # Set xdebug options in php.ini files
+    for type in $types; do
+        path="/etc/php/$version/$type/php.ini"
+        if [ -f "$path" ]; then
+            if [[ $version == '5.6' ]] || [[ $version == '7.1' ]]; then
+                for option in $xdebug2_options; do
+                    value="On"
+                    if [[ "$option" == "xdebug.remote_host" ]]; then
+                        value="172.17.0.1"
+                    fi
+                    # Uncomment manually via dshr nano /etc/php/7.1/(apache2|cli)/php.ini
+                    if [[ "$option" == ";xdebug.profiler_output_dir" ]]; then
+                        value="/var/www/kcachegrind/"
+                    fi
+                    if grep -r "$option" "$path" > /dev/null; then
+                        sed -i "s#$option =.*#$option = $value#g" "$path"
+                    else
+                        echo "$option = $value" >> "$path"
+                    fi
+                done
+            else
+                for option in $xdebug3_options; do
+                    value="On"
+                    if [[ "$option" == "xdebug.client_host" ]]; then
+                        value="172.17.0.1"
+                    fi
+                    if [[ "$option" == "xdebug.mode" ]]; then
+                        value="debug,develop"
+                    fi
+                    # Uncomment manually via dshr nano /etc/php/7.4/(apache2|cli)/php.ini
+                    if [[ "$option" == ";xdebug.mode" ]]; then
+                        value="debug,develop,profile,trace"
+                    fi
+                    if [[ "$option" == "xdebug.output_dir" ]]; then
+                        value="/var/www/kcachegrind"
+                    fi
+                    if [[ "$option" == "xdebug.client_port" ]]; then
+                        value="9000"
+                    fi
+                    if [[ "$option" == "xdebug.trace_format" ]]; then
+                        value="1"
+                    fi
+                    if [[ "$option" == "xdebug.collect_return" ]]; then
+                        value="true"
+                    fi
+                    if [[ "$option" == "xdebug.collect_assignments" ]]; then
+                        value="true"
+                    fi
+                    if [[ "$option" == "xdebug.trace_options" ]]; then
+                        value="1"
+                    fi
+                    if [[ "$option" == "xdebug.trace_output_name" ]]; then
+                        value="trace"
+                    fi
+                    if grep -r "$option" "$path" > /dev/null; then
+                        sed -i "s#$option =.*#$option = $value#g" "$path"
+                    else
+                        echo "$option = $value" >> "$path"
+                    fi
+                done
+            fi
+        fi
+    done
+done
+
+# Mailhog - will install binaries to /home/www-data/go/bin
+# bugfix[n].test:8025 for dashboard
+# 18.04
+# runuser -l www-data -c 'go get github.com/mailhog/MailHog'
+# runuser -l www-data -c 'go get github.com/mailhog/mhsendmail'
+# 22.04
+runuser -l www-data -c 'go install github.com/mailhog/MailHog@latest'
+runuser -l www-data -c 'go install github.com/mailhog/mhsendmail@latest'
+runuser -l www-data -c 'nohup sh -c "/home/www-data/go/bin/MailHog" > /dev/null 2>&1 &'
+
+# SSL (TODO: see docker_apache_default - currently just using the 'snakeoil' which gives a security warning)
+# https://www.digitalocean.com/community/tutorials/how-to-create-a-self-signed-ssl-certificate-for-apache-in-ubuntu-16-04
+# openssl req -x509 -nodes -days 365 -newkey rsa:512 -keyout /etc/ssl/private/apache-selfsigned.key -out /etc/ssl/certs/apache-selfsigned.crt -subj "/C=US/ST=Denial/L=Springfield/O=Dis/CN=www.example.com"
+# openssl dhparam -out /etc/ssl/certs/dhparam.pem 512
+# touch /etc/apache2/conf-available/ssl-params.conf
+# echo 'SSLCipherSuite EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH' >> /etc/apache2/conf-available/ssl-params.conf
+# echo 'SSLProtocol All -SSLv2 -SSLv3' >> /etc/apache2/conf-available/ssl-params.conf
+# echo 'SSLHonorCipherOrder On' >> /etc/apache2/conf-available/ssl-params.conf
+# echo 'SSLCompression off' >> /etc/apache2/conf-available/ssl-params.conf
+# echo 'SSLSessionTickets Off' >> /etc/apache2/conf-available/ssl-params.conf
+# echo 'SSLUseStapling on' >> /etc/apache2/conf-available/ssl-params.conf
+# echo 'SSLStaplingCache "shmcb:logs/stapling-cache(150000)"' >> /etc/apache2/conf-available/ssl-params.conf
+# echo 'SSLOpenSSLConfCmd DHParameters "/etc/ssl/certs/dhparam.pem"' >> /etc/apache2/conf-available/ssl-params.conf
+
+a2enmod ssl
+a2enmod headers
+# a2enconf ssl-params
+apache2ctl configtest
+
+# Apache gets grumpy about PID files pre-existing, so remove them:
+rm -f /var/run/apache2/apache2.pid
+
+# Read default envvars, which includes APACHE_RUN_USER/GROUP=www-data
+source /etc/apache2/envvars
+
+# Start apache
+# It seems like -DFOREGROUND is required for the container to work correctly
+exec /usr/sbin/apache2 -DFOREGROUND
