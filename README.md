@@ -51,6 +51,14 @@ SS_MFA_SECRET_KEY="92c3090584175b99966561e1efe237e4"
 MAILER_DSN="sendmail://default?command=/home/www-data/go/bin/mhsendmail%20-t"
 ```
 
+## Using the website
+
+`http://mycms.test`
+
+The first time you visit it it will redirect to `/dev/build` which will do an initial build of the database
+
+The use the CMS, navigate to `/admin` and use the credentials `user`, `password`
+
 ## Commands
 
 **spin-up docker container**
