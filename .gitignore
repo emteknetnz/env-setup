@@ -1,4 +1,1 @@
-composer.lock
-themes
-vendor
-_resources
+.graphql-generated

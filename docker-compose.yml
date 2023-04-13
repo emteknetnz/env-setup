@@ -32,7 +32,7 @@ services:
     # use ports instead of IP address for database connection
     # example: bugfix14 connect on 0.0.0.0:3314
     ports:
-      - 336:3306
+      - 3350:3306
     networks:
       mynet:
 
